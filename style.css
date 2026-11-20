@@ -1,0 +1,581 @@
+/* ==========================================================================
+   MYSTIC MOTION - Cinematic Marvel VFX Web Styles
+   ========================================================================== */
+
+:root {
+  --bg-color: #0c0a18;
+  --panel-bg: rgba(12, 10, 24, 0.78);
+  --border-glow: rgba(255, 215, 80, 0.25);
+  --text-main: #f0f2fa;
+  --text-dim: #9aa1be;
+  
+  /* Current active character accent (updated dynamically via JS) */
+  --hero-color: #ff9b00;
+  --hero-accent: #ffdc50;
+  --hero-glow: rgba(255, 155, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  touch-action: none;
+}
+
+.app-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-color);
+  overflow: hidden;
+}
+
+/* Hidden source video element */
+#webcam {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Main Display Canvas */
+#output-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background-color: #000;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   HUD Header
+   ========================================================================== */
+.hud-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, rgba(12, 10, 24, 0.92) 0%, rgba(12, 10, 24, 0.6) 80%, transparent 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: 0.16em;
+  color: #ebebff;
+  text-shadow: 0 0 12px rgba(235, 235, 255, 0.4);
+}
+
+.character-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hero-color);
+  box-shadow: 0 0 14px var(--hero-glow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--hero-accent);
+  box-shadow: 0 0 8px var(--hero-accent);
+}
+
+.badge-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+  color: var(--hero-accent);
+  text-transform: uppercase;
+}
+
+.hud-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Rajdhani', monospace;
+}
+
+.stat-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+.stat-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ebebff;
+}
+
+.pose-tag {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--hero-color);
+  color: var(--hero-accent);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-size: 0.8rem;
+  padding: 5px 12px;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   Floating Action Buttons (Side Controls)
+   ========================================================================== */
+.floating-controls {
+  position: absolute;
+  top: 90px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 15;
+}
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(18, 15, 36, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e4f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-btn:hover {
+  background: rgba(28, 24, 54, 0.9);
+  border-color: var(--hero-accent);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 0 16px var(--hero-glow);
+}
+
+.icon-btn:active {
+  transform: translateY(0);
+}
+
+.icon-btn.active {
+  border-color: var(--hero-accent);
+  background: var(--hero-glow);
+  color: #fff;
+}
+
+/* ==========================================================================
+   Character Selection Dock (Bottom)
+   ========================================================================== */
+.character-dock {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(12, 10, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 15;
+  max-width: 95vw;
+  overflow-x: auto;
+}
+
+.char-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.22s ease;
+}
+
+.char-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  color: #fff;
+}
+
+.char-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.char-btn.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hero-color);
+  color: #fff;
+  box-shadow: 0 0 16px var(--hero-glow);
+}
+
+.char-btn.active .char-key {
+  background: var(--hero-color);
+  color: #000;
+}
+
+/* ==========================================================================
+   Help & Instructions Modal
+   ========================================================================== */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 4, 14, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+  transition: opacity 0.3s ease;
+}
+
+.modal-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.modal-card {
+  background: #110e24;
+  border: 1px solid rgba(255, 215, 80, 0.3);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 640px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7), 0 0 30px rgba(255, 155, 0, 0.2);
+  padding: 28px;
+  animation: modalPop 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+@keyframes modalPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.modal-header h2 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  color: #ffdc50;
+  letter-spacing: 0.12em;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #fff;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.guide-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.guide-icon {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.guide-card h3 {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #fff;
+}
+
+.guide-card p {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.shortcuts-list h4 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.shortcut-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shortcut-pills span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #d1d5eb;
+}
+
+kbd {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  font-family: monospace;
+}
+
+/* ==========================================================================
+   Loading Overlay
+   ========================================================================== */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  transition: opacity 0.5s ease;
+}
+
+.loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-box {
+  text-align: center;
+  max-width: 440px;
+  padding: 32px;
+}
+
+.mystic-spinner {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 28px;
+}
+
+.ring-outer {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed #ff9b00;
+  border-radius: 50%;
+  animation: spinCw 10s linear infinite;
+  box-shadow: 0 0 20px rgba(255, 155, 0, 0.3);
+}
+
+.ring-inner {
+  position: absolute;
+  inset: 16px;
+  border: 2px dotted #ffdc50;
+  border-radius: 50%;
+  animation: spinCcw 6s linear infinite;
+}
+
+.glyph-symbol {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  color: #ffdc50;
+  animation: pulseGlyph 2s ease-in-out infinite;
+}
+
+@keyframes spinCw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spinCcw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes pulseGlyph {
+  0%, 100% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; text-shadow: 0 0 15px #ffdc50; }
+}
+
+#loading-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.14em;
+  color: #ffdc50;
+  margin-bottom: 10px;
+}
+
+#loading-desc {
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.start-btn {
+  display: inline-block;
+  padding: 14px 28px;
+  border-radius: 9999px;
+  border: none;
+  background: linear-gradient(135deg, #ff9b00, #ff5500);
+  color: #fff;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 155, 0, 0.6);
+  transition: all 0.25s ease;
+}
+
+.start-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 0 35px rgba(255, 155, 0, 0.8);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+@media (max-width: 768px) {
+  .hud-header {
+    height: 60px;
+    padding: 0 14px;
+  }
+  .brand-title {
+    font-size: 1rem;
+  }
+  .character-badge {
+    padding: 3px 8px;
+  }
+  .badge-name {
+    font-size: 0.78rem;
+  }
+  .floating-controls {
+    top: 72px;
+    right: 12px;
+  }
+  .guide-grid {
+    grid-template-columns: 1fr;
+  }
+  .character-dock {
+    bottom: 16px;
+    padding: 6px 10px;
+  }
+  .char-title {
+    display: none;
+  }
+  .char-btn {
+    padding: 8px 12px;
+  }
+}

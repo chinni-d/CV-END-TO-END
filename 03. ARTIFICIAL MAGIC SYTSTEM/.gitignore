@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Model cache (downloaded on demand if running python locally)
+# models/*.task
+
+# Vercel & Node
+.vercel
+node_modules/
+npm-debug.log*

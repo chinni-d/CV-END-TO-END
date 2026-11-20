@@ -1,7 +1,7 @@
 /**
- * MYSTIC MOTION - Main Application Controller
- * Directly executes your Python main.py CV & VFX logic via /api/process,
- * with optional fallback to client-side WebAssembly execution.
+ * MYSTIC MOTION - Mobile-First Application Controller
+ * Handles MediaPipe AI Hand Tracking, Webcam Stream, HUD, and Canvas VFX.
+ * Clean, lightweight, zero audio.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -15,17 +15,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const statHandsEl = document.getElementById("stat-hands");
   const statFpsEl = document.getElementById("stat-fps");
   const statPoseEl = document.getElementById("stat-pose");
-  const characterBadge = document.getElementById("character-badge");
 
-  // Control Buttons
-  const charButtons = document.querySelectorAll(".char-btn");
-  const btnSound = document.getElementById("btn-sound");
-  const iconSoundOff = document.getElementById("icon-sound-off");
-  const iconSoundOn = document.getElementById("icon-sound-on");
-  const btnMirror = document.getElementById("btn-mirror");
-  const btnSwitchCam = document.getElementById("btn-switch-cam");
+  // Controls
+  const charButtons = document.querySelectorAll(".dock-item");
   const btnSnapshot = document.getElementById("btn-snapshot");
-  const btnFullscreen = document.getElementById("btn-fullscreen");
   const btnHelp = document.getElementById("btn-help");
   const modalHelp = document.getElementById("help-modal");
   const modalClose = document.getElementById("modal-close");
@@ -38,44 +31,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Application State
   let currentHeroKey = "1";
-  let isMirrored = true;
-  let showHelpInHUD = true;
-  let currentFacingMode = "user";
+  const isMirrored = true; // Natural selfie mirror by default
   let cameraStream = null;
-
-  // Processing mode: "python" (executes main.py) or "client" (MediaPipe WASM)
-  let executionMode = "python";
-  let isSendingFrame = false;
-
-  // Systems
-  const audioSystem = new MysticAudio();
-  let vfxRenderer = null;
   let handsModel = null;
-  let isClientModelReady = false;
+  let isModelReady = false;
 
-  // Offscreen canvas for grabbing video frames
-  const offscreenCanvas = document.createElement("canvas");
-  const offscreenCtx = offscreenCanvas.getContext("2d");
+  // VFX Renderer
+  const vfxRenderer = new MagicRenderer();
 
-  // Check if Python backend is available
-  async function detectBackend() {
-    try {
-      const res = await fetch("/api/health");
-      if (res.ok) {
-        const data = await res.json();
-        console.log("[Mystic Motion] Connected to Python CV Backend (main.py):", data);
-        executionMode = "python";
-        statPoseEl.textContent = "PYTHON MAIN.PY";
-        return true;
-      }
-    } catch (e) {
-      console.log("[Mystic Motion] Python endpoint unavailable, falling back to Client WASM mode.");
-    }
-    executionMode = "client";
-    return false;
-  }
+  // Performance telemetry
+  let lastTimestamp = performance.now();
+  let smoothFps = 60.0;
+  let inwardPoseUntil = 0.0;
 
-  // Set theme colors based on selected hero
+  // Apply Character Theme
   function applyHeroTheme(key) {
     const hero = CHARACTERS[key];
     if (!hero) return;
@@ -86,133 +55,26 @@ document.addEventListener("DOMContentLoaded", () => {
     document.documentElement.style.setProperty("--hero-glow", hero.glow);
 
     heroNameEl.textContent = hero.name;
-    audioSystem.playSpellActivation(key);
 
     charButtons.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.char === key);
     });
   }
 
-  // Adjust canvas resolution
+  // Responsive Canvas Sizing
   function resizeCanvas() {
-    const width = videoElement.videoWidth || 1280;
-    const height = videoElement.videoHeight || 720;
+    const width = videoElement.videoWidth || window.innerWidth;
+    const height = videoElement.videoHeight || window.innerHeight;
 
     if (canvasElement.width !== width || canvasElement.height !== height) {
       canvasElement.width = width;
       canvasElement.height = height;
-      offscreenCanvas.width = width;
-      offscreenCanvas.height = height;
     }
   }
 
-  // Start Camera Stream
-  async function startWebcam() {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach((t) => t.stop());
-    }
-
+  // Initialize MediaPipe Vision Hands
+  function initMediaPipe() {
     try {
-      const constraints = {
-        video: {
-          facingMode: currentFacingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      };
-
-      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoElement.srcObject = cameraStream;
-      await videoElement.play();
-
-      resizeCanvas();
-      loadingScreen.classList.add("hidden");
-
-      // Check backend health
-      await detectBackend();
-
-      if (executionMode === "client") {
-        initClientMediaPipe();
-      }
-
-      // Begin continuous loop
-      requestAnimationFrame(mainLoop);
-    } catch (err) {
-      console.error("Camera access error:", err);
-      alert("Camera access denied or unavailable. Please grant webcam permissions.");
-      loadingTitle.textContent = "CAMERA PERMISSION REQUIRED";
-      loadingDesc.textContent = "Please allow webcam access in your browser to run Mystic Motion.";
-    }
-  }
-
-  // ==========================================================================
-  // Python main.py Execution Pipeline
-  // ==========================================================================
-  const displayImage = new Image();
-  let lastPythonCall = performance.now();
-  let pythonFps = 0;
-
-  async function processPythonFrame() {
-    if (isSendingFrame || videoElement.readyState < 2) return;
-    isSendingFrame = true;
-
-    try {
-      // Draw frame to offscreen canvas
-      offscreenCtx.drawImage(videoElement, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
-      const base64Data = offscreenCanvas.toDataURL("image/jpeg", 0.75);
-
-      const response = await fetch("/api/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: base64Data,
-          character: currentHeroKey,
-          help: showHelpInHUD,
-          mirror: isMirrored
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.image) {
-          displayImage.onload = () => {
-            ctx.drawImage(displayImage, 0, 0, canvasElement.width, canvasElement.height);
-          };
-          displayImage.src = result.image;
-        }
-
-        const now = performance.now();
-        const dt = Math.max((now - lastPythonCall) / 1000.0, 1e-4);
-        lastPythonCall = now;
-        pythonFps = 0.9 * pythonFps + 0.1 * (1.0 / dt);
-
-        statHandsEl.textContent = result.hands ?? 0;
-        statFpsEl.textContent = Math.round(result.fps || pythonFps);
-        statPoseEl.textContent = "PYTHON CV";
-        audioSystem.updateMagicHum(result.hands || 0, currentHeroKey, false);
-      } else {
-        // If Python endpoint returns an error, fallback to client WASM
-        console.warn("Python backend error, switching to client execution.");
-        executionMode = "client";
-        initClientMediaPipe();
-      }
-    } catch (err) {
-      console.warn("Python backend unreachable, switching to client execution.", err);
-      executionMode = "client";
-      initClientMediaPipe();
-    } finally {
-      isSendingFrame = false;
-    }
-  }
-
-  // ==========================================================================
-  // Client-Side WASM MediaPipe Fallback Pipeline
-  // ==========================================================================
-  function initClientMediaPipe() {
-    if (isClientModelReady) return;
-    try {
-      vfxRenderer = new MagicRenderer();
       handsModel = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
@@ -224,25 +86,68 @@ document.addEventListener("DOMContentLoaded", () => {
         minTrackingConfidence: 0.50
       });
 
-      handsModel.onResults(onClientHandResults);
-      isClientModelReady = true;
-      statPoseEl.textContent = "CLIENT WASM";
+      handsModel.onResults(onHandResults);
+      isModelReady = true;
+
+      loadingTitle.textContent = "MYSTIC VISION READY";
+      loadingDesc.textContent = "Tap Activate Camera to channel live palm magic.";
+      btnStartCamera.classList.remove("hidden");
     } catch (err) {
-      console.error("Client MediaPipe initialization error:", err);
+      console.error("MediaPipe initialization error:", err);
+      loadingTitle.textContent = "VISION INITIALIZATION FAILED";
+      loadingDesc.textContent = "Check network connection to load MediaPipe AI models.";
     }
   }
 
-  let clientFps = 60.0;
-  let lastClientTimestamp = performance.now();
-  let inwardPoseUntil = 0.0;
+  // Start Webcam Stream
+  async function startWebcam() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+    }
 
-  function onClientHandResults(results) {
+    try {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const constraints = {
+        video: {
+          facingMode: "user",
+          width: { ideal: isMobile ? 720 : 1280 },
+          height: { ideal: isMobile ? 1280 : 720 }
+        },
+        audio: false
+      };
+
+      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      videoElement.srcObject = cameraStream;
+      await videoElement.play();
+
+      resizeCanvas();
+      loadingScreen.classList.add("hidden");
+
+      processVideoFrame();
+    } catch (err) {
+      console.error("Camera access error:", err);
+      loadingTitle.textContent = "CAMERA ACCESS REQUIRED";
+      loadingDesc.textContent = "Please grant camera permission in your browser settings to continue.";
+    }
+  }
+
+  // Frame Processing Loop
+  async function processVideoFrame() {
+    if (videoElement.readyState >= 2 && isModelReady) {
+      await handsModel.send({ image: videoElement });
+    }
+    requestAnimationFrame(processVideoFrame);
+  }
+
+  // MediaPipe Results Callback
+  function onHandResults(results) {
     const now = performance.now() / 1000.0;
-    const dt = Math.max(now - lastClientTimestamp, 1e-4);
-    lastClientTimestamp = now;
+    const dt = Math.max(now - lastTimestamp, 1e-4);
+    lastTimestamp = now;
 
-    clientFps = 0.9 * clientFps + 0.1 * (1.0 / dt);
-    statFpsEl.textContent = Math.round(clientFps);
+    const currentFps = 1.0 / dt;
+    smoothFps = 0.9 * smoothFps + 0.1 * currentFps;
+    statFpsEl.textContent = Math.round(smoothFps);
 
     const w = canvasElement.width;
     const h = canvasElement.height;
@@ -250,6 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.save();
     ctx.clearRect(0, 0, w, h);
 
+    // 1. Draw video background (Mirrored)
     if (isMirrored) {
       ctx.translate(w, 0);
       ctx.scale(-1, 1);
@@ -257,10 +163,11 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.drawImage(results.image, 0, 0, w, h);
     ctx.restore();
 
+    // 2. Parse hand points
     const rawHands = results.multiHandLandmarks || [];
     statHandsEl.textContent = rawHands.length;
 
-    const hands = rawHands.map((landmarks, idx) => {
+    const hands = rawHands.map((landmarks) => {
       const points = landmarks.map((pt) => ({
         x: isMirrored ? 1.0 - pt.x : pt.x,
         y: pt.y,
@@ -270,93 +177,58 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const hero = CHARACTERS[currentHeroKey];
-    let isTwoHand = false;
+    let activePose = "READY";
 
     if (hands.length >= 2) {
       const inwardDetected = facingEachOther(hands[0], hands[1]);
-      if (inwardDetected) inwardPoseUntil = now + 0.22;
+      if (inwardDetected) {
+        inwardPoseUntil = now + 0.22;
+      }
       const inwardPose = now < inwardPoseUntil;
       const cameraPose = palmsFaceCamera(hands[0], hands[1]);
 
       if (inwardPose) {
-        isTwoHand = true;
+        activePose = "CONVERGE";
         vfxRenderer.renderTwoHandField(ctx, hero, hands, now, w, h);
       } else {
         hands.forEach((hand, id) => {
           vfxRenderer.renderHand(ctx, hero, hand, now, id, w, h);
         });
+
         if (cameraPose) {
-          isTwoHand = true;
+          activePose = "BLAST";
           vfxRenderer.renderTwoHandField(ctx, hero, hands, now, w, h);
         }
       }
     } else if (hands.length === 1) {
+      activePose = "CHANNELING";
       vfxRenderer.renderHand(ctx, hero, hands[0], now, 0, w, h);
     }
 
-    audioSystem.updateMagicHum(hands.length, currentHeroKey, isTwoHand);
+    statPoseEl.textContent = activePose;
   }
 
   // ==========================================================================
-  // Main Execution Loop
+  // Interactions & Controls
   // ==========================================================================
-  async function mainLoop() {
-    if (videoElement.readyState >= 2) {
-      if (executionMode === "python") {
-        await processPythonFrame();
-      } else if (executionMode === "client" && isClientModelReady) {
-        await handsModel.send({ image: videoElement });
-      }
-    }
-    requestAnimationFrame(mainLoop);
-  }
+  btnStartCamera.addEventListener("click", startWebcam);
 
-  // ==========================================================================
-  // User Controls & Event Listeners
-  // ==========================================================================
-  btnStartCamera.addEventListener("click", () => {
-    audioSystem.init();
-    startWebcam();
-  });
-
+  // Character selection
   charButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       applyHeroTheme(btn.dataset.char);
     });
   });
 
-  btnSound.addEventListener("click", () => {
-    const isMuted = !audioSystem.toggle();
-    iconSoundOff.classList.toggle("hidden", !isMuted);
-    iconSoundOn.classList.toggle("hidden", isMuted);
-    btnSound.classList.toggle("active", !isMuted);
-  });
-
-  btnMirror.addEventListener("click", () => {
-    isMirrored = !isMirrored;
-    btnMirror.classList.toggle("active", isMirrored);
-  });
-
-  btnSwitchCam.addEventListener("click", () => {
-    currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
-    startWebcam();
-  });
-
-  btnFullscreen.addEventListener("click", () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
-  });
-
+  // Snapshot capture
   btnSnapshot.addEventListener("click", () => {
     const link = document.createElement("a");
-    link.download = `mystic-motion-${CHARACTERS[currentHeroKey].name.toLowerCase()}-${Date.now()}.png`;
+    link.download = `mystic-${CHARACTERS[currentHeroKey].name.toLowerCase()}-${Date.now()}.png`;
     link.href = canvasElement.toDataURL("image/png");
     link.click();
   });
 
+  // Help modal
   btnHelp.addEventListener("click", () => {
     modalHelp.classList.remove("hidden");
   });
@@ -367,30 +239,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === modalHelp) modalHelp.classList.add("hidden");
   });
 
+  // Keyboard Shortcuts
   window.addEventListener("keydown", (e) => {
     const key = e.key;
     if (key >= "1" && key <= "5") {
       applyHeroTheme(key);
-    } else if (key.toLowerCase() === "m") {
-      btnMirror.click();
-    } else if (key.toLowerCase() === "s") {
-      btnSound.click();
     } else if (key.toLowerCase() === "h") {
-      showHelpInHUD = !showHelpInHUD;
       modalHelp.classList.toggle("hidden");
-    } else if (key.toLowerCase() === "f") {
-      btnFullscreen.click();
     } else if (key === " " || key === "Spacebar") {
       e.preventDefault();
       btnSnapshot.click();
     }
   });
 
+  // Responsive adapt on resize / mobile orientation change
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("orientationchange", () => {
+    setTimeout(resizeCanvas, 300);
+  });
 
+  // Initialize
   applyHeroTheme("1");
-  btnMirror.classList.add("active");
-  btnStartCamera.classList.remove("hidden");
-  loadingTitle.textContent = "MYSTIC MOTION READY";
-  loadingDesc.textContent = "Click Activate to connect your camera directly to the Python CV Engine.";
+  initMediaPipe();
 });
